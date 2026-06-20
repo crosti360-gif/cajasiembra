@@ -1,0 +1,383 @@
+import streamlit as st
+import pandas as pd
+import datetime
+
+# --- CONFIGURACIÓN DE LA PÁGINA ---
+st.set_page_config(page_title="SIEMBRA CAJA - ERP", layout="wide", page_icon="🌱")
+
+# Función segura para recargar la página según la versión de Streamlit
+def recargar_app():
+    if hasattr(st, 'rerun'):
+        st.rerun()
+    else:
+        st.experimental_rerun()
+
+# --- SIMULACIÓN DE BASE DE DATOS EN MEMORIA ---
+if "clientes" not in st.session_state:
+    st.session_state.clientes = pd.DataFrame([
+        {"ID": 1, "Cédula": "1234567-8", "Nombre": "Socio Juan Pérez", "Teléfono": "099123456", "Correo": "juan@mail.com", "Dirección": "Centro 123", "Fecha de Nacimiento": "15/06/1990", "Estado": "Activo", "Saldo": 1500},
+        {"ID": 2, "Cédula": "8765432-1", "Nombre": "Socio María Rodríguez", "Teléfono": "098765432", "Correo": "maria@mail.com", "Dirección": "Pocitos 456", "Fecha de Nacimiento": "22/11/1985", "Estado": "Activo", "Saldo": 0}
+    ])
+
+if "productos" not in st.session_state:
+    st.session_state.productos = pd.DataFrame([
+        {"Código": "P001", "Variedad": "24 K", "Familia": "Flores", "Stock": 120},
+        {"Código": "P002", "Variedad": "Gorilla Glue", "Familia": "Flores", "Stock": 45}
+    ])
+
+if "ventas" not in st.session_state:
+    st.session_state.ventas = pd.DataFrame(columns=["Fecha", "Recibo", "Cliente", "Variedad", "Gramos", "Precio/g", "Total", "Condición"])
+
+if "cobranzas" not in st.session_state:
+    st.session_state.cobranzas = pd.DataFrame(columns=["Fecha", "Cliente", "Monto Abonado"])
+
+if "compras" not in st.session_state:
+    st.session_state.compras = pd.DataFrame(columns=["Fecha", "Concepto", "Proveedor", "Monto"])
+
+if "retiros" not in st.session_state:
+    st.session_state.retiros = pd.DataFrame([
+        {"Fecha": "2026-06-19", "Usuario": "Usuario 1", "Monto": 500},
+        {"Fecha": "2026-06-20", "Usuario": "Usuario 2", "Monto": 300}
+    ])
+
+# --- MENÚ DE NAVEGACIÓN ---
+st.sidebar.title("🌱 SIEMBRA CAJA")
+st.sidebar.write("Sistema de Gestión Comercial")
+menu = st.sidebar.radio("Ir a:", [
+    "📊 Dashboard", 
+    "👥 Clientes y Cobranzas", 
+    "🌿 Inventario y Variedades", 
+    "🛍️ Registrar Venta", 
+    "💸 Compras y Retiros", 
+    "💰 Caja y Finanzas"
+])
+
+# ==========================================
+# --- MODULO 1: DASHBOARD ---
+# ==========================================
+if menu == "📊 Dashboard":
+    st.title("📊 Panel de Control General")
+    st.write("Resumen automatizado en tiempo real.")
+    
+    total_ventas = st.session_state.ventas["Total"].sum() if not st.session_state.ventas.empty else 0
+    deuda_total = st.session_state.clientes["Saldo"].sum()
+    total_clientes = len(st.session_state.clientes)
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Ventas Totales Históricas ($)", f"${total_ventas:,.2f}")
+    col2.metric("Deuda Pendiente a Cobrar ($)", f"${deuda_total:,.2f}", delta="- Activa", delta_color="inverse")
+    col3.metric("Socios Registrados", total_clientes)
+
+# ==========================================
+# --- MODULO 2: CLIENTES Y COBRANZAS ---
+# ==========================================
+elif menu == "👥 Clientes y Cobranzas":
+    st.title("👥 Base de Datos y Cobros")
+    
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Listado de Socios", "➕ Nuevo Socio", "✏️ Editar Socio", "💳 Cobrar Deuda", "🗑️ Eliminar Socio"])
+    
+    with tab1:
+        st.dataframe(st.session_state.clientes, use_container_width=True)
+        
+    with tab2:
+        with st.form("nuevo_cliente"):
+            st.subheader("Registrar Nuevo Socio")
+            col1, col2 = st.columns(2)
+            with col1:
+                cedula = st.text_input("Cédula de Identidad")
+                nombre = st.text_input("Nombre Completo")
+                tel = st.text_input("Teléfono")
+            with col2:
+                correo = st.text_input("Correo Electrónico")
+                direccion = st.text_input("Dirección")
+                fecha_nac = st.text_input("Fecha de Nacimiento (DD/MM/AAAA)")
+            
+            enviar = st.form_submit_button("Guardar Socio")
+            if enviar and nombre:
+                nuevo_id = len(st.session_state.clientes) + 1
+                nueva_fila = {"ID": nuevo_id, "Cédula": cedula, "Nombre": nombre, "Teléfono": tel, "Correo": correo, "Dirección": direccion, "Fecha de Nacimiento": fecha_nac, "Estado": "Activo", "Saldo": 0}
+                st.session_state.clientes = pd.concat([st.session_state.clientes, pd.DataFrame([nueva_fila])], ignore_index=True)
+                st.success("Socio guardado correctamente.")
+                recargar_app()
+
+    with tab3:
+        st.subheader("Modificar Datos de un Socio Existente")
+        if not st.session_state.clientes.empty:
+            cliente_a_editar = st.selectbox("Seleccione el Socio a editar", st.session_state.clientes["Nombre"].tolist(), key="select_editar")
+            
+            idx_editar = st.session_state.clientes.index[st.session_state.clientes["Nombre"] == cliente_a_editar].tolist()[0]
+            datos_actuales = st.session_state.clientes.iloc[idx_editar]
+            
+            with st.form("editar_cliente"):
+                colA, colB = st.columns(2)
+                with colA:
+                    edit_cedula = st.text_input("Cédula de Identidad", value=str(datos_actuales.get("Cédula", "")))
+                    edit_nombre = st.text_input("Nombre Completo", value=str(datos_actuales.get("Nombre", "")))
+                    edit_tel = st.text_input("Teléfono", value=str(datos_actuales.get("Teléfono", "")))
+                    
+                    estado_actual = datos_actuales.get("Estado", "Activo")
+                    idx_estado = 0 if estado_actual == "Activo" else 1
+                    edit_estado = st.selectbox("Estado", ["Activo", "Inactivo"], index=idx_estado)
+                with colB:
+                    edit_correo = st.text_input("Correo Electrónico", value=str(datos_actuales.get("Correo", "")))
+                    edit_direccion = st.text_input("Dirección", value=str(datos_actuales.get("Dirección", "")))
+                    edit_fecha_nac = st.text_input("Fecha de Nacimiento (DD/MM/AAAA)", value=str(datos_actuales.get("Fecha de Nacimiento", "")))
+                
+                btn_guardar_cambios = st.form_submit_button("Guardar Cambios")
+                
+                if btn_guardar_cambios and edit_nombre:
+                    viejo_nombre = datos_actuales["Nombre"]
+                    
+                    st.session_state.clientes.at[idx_editar, "Cédula"] = edit_cedula
+                    st.session_state.clientes.at[idx_editar, "Nombre"] = edit_nombre
+                    st.session_state.clientes.at[idx_editar, "Teléfono"] = edit_tel
+                    st.session_state.clientes.at[idx_editar, "Correo"] = edit_correo
+                    st.session_state.clientes.at[idx_editar, "Dirección"] = edit_direccion
+                    st.session_state.clientes.at[idx_editar, "Fecha de Nacimiento"] = edit_fecha_nac
+                    st.session_state.clientes.at[idx_editar, "Estado"] = edit_estado
+                    
+                    if viejo_nombre != edit_nombre:
+                        if not st.session_state.ventas.empty:
+                            st.session_state.ventas.loc[st.session_state.ventas["Cliente"] == viejo_nombre, "Cliente"] = edit_nombre
+                        if not st.session_state.cobranzas.empty:
+                            st.session_state.cobranzas.loc[st.session_state.cobranzas["Cliente"] == viejo_nombre, "Cliente"] = edit_nombre
+                            
+                    st.success("Datos actualizados correctamente.")
+                    recargar_app()
+        else:
+            st.info("No hay socios registrados para editar.")
+
+    with tab4:
+        st.subheader("Cobrar deuda a cliente")
+        deudores = st.session_state.clientes[st.session_state.clientes["Saldo"] > 0]
+        
+        if deudores.empty:
+            st.info("No hay clientes con deudas pendientes actualmente.")
+        else:
+            def format_deudor(nombre):
+                estado = st.session_state.clientes.loc[st.session_state.clientes["Nombre"] == nombre, "Estado"].values[0]
+                return f"{nombre} (Inactivo)" if estado == "Inactivo" else nombre
+
+            with st.form("cobrar_deuda"):
+                cliente_cobro = st.selectbox("Seleccionar Socio Deudor", deudores["Nombre"].tolist(), format_func=format_deudor)
+                deuda_actual = deudores[deudores["Nombre"] == cliente_cobro]["Saldo"].values[0]
+                st.write(f"**Deuda actual:** ${deuda_actual:,.2f}")
+                
+                max_deuda = int(deuda_actual) if deuda_actual >= 1 else 1
+                monto_pago = st.number_input("Monto a entregar ($)", min_value=1, step=10, max_value=max_deuda)
+                
+                btn_cobrar = st.form_submit_button("Registrar Cobranza")
+                
+                if btn_cobrar:
+                    nueva_cobranza = {"Fecha": str(datetime.date.today()), "Cliente": cliente_cobro, "Monto Abonado": monto_pago}
+                    st.session_state.cobranzas = pd.concat([st.session_state.cobranzas, pd.DataFrame([nueva_cobranza])], ignore_index=True)
+                    
+                    idx_cli = st.session_state.clientes.index[st.session_state.clientes["Nombre"] == cliente_cobro].tolist()[0]
+                    st.session_state.clientes.at[idx_cli, "Saldo"] -= monto_pago
+                    st.success(f"Cobranza registrada. El nuevo saldo de {cliente_cobro} es ${deuda_actual - monto_pago:,.2f}")
+                    recargar_app()
+
+    with tab5:
+        st.subheader("🗑️ Eliminar Socio de la Base de Datos")
+        if not st.session_state.clientes.empty:
+            with st.form("eliminar_cliente"):
+                cliente_a_borrar = st.selectbox("Seleccione el Socio a eliminar", st.session_state.clientes["Nombre"].tolist(), key="select_borrar")
+                
+                st.warning("⚠️ ¡Atención! Al eliminar a este socio desaparecerá de la lista de clientes, pero sus facturas o deudas previas seguirán apareciendo en tu historial financiero con su nombre para no afectar tu contabilidad.")
+                
+                btn_eliminar = st.form_submit_button("Eliminar Permanentemente", type="primary")
+                
+                if btn_eliminar:
+                    st.session_state.clientes = st.session_state.clientes[st.session_state.clientes["Nombre"] != cliente_a_borrar].reset_index(drop=True)
+                    st.success(f"Socio {cliente_a_borrar} eliminado exitosamente.")
+                    recargar_app()
+        else:
+            st.info("No hay socios registrados.")
+
+# ==========================================
+# --- MODULO 3: PRODUCTOS Y STOCK ---
+# ==========================================
+elif menu == "🌿 Inventario y Variedades":
+    st.title("🌿 Gestión de Inventario y Catálogo")
+    
+    tab1, tab2 = st.tabs(["Inventario y Ajustes", "Agregar/Quitar Variedades"])
+    
+    with tab1:
+        st.dataframe(st.session_state.productos, use_container_width=True)
+        st.subheader("🔄 Ingreso / Egreso Manual")
+        
+        if not st.session_state.productos.empty:
+            with st.form("modificar_stock"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    var_seleccionada = st.selectbox("Seleccionar Variedad", st.session_state.productos["Variedad"].tolist())
+                    tipo_mov = st.radio("Tipo de Movimiento", ["Entrada (+) - Cosecha/Compra", "Salida (-) - Merma/Ajuste"])
+                with col2:
+                    cantidad = st.number_input("Cantidad (Gramos)", min_value=1, step=1)
+                    concepto = st.text_input("Concepto / Observación")
+                    
+                btn_actualizar = st.form_submit_button("Actualizar Inventario")
+                if btn_actualizar:
+                    idx = st.session_state.productos.index[st.session_state.productos['Variedad'] == var_seleccionada].tolist()[0]
+                    if "Entrada" in tipo_mov:
+                        st.session_state.productos.at[idx, "Stock"] += cantidad
+                    else:
+                        st.session_state.productos.at[idx, "Stock"] -= cantidad
+                    st.success("Stock actualizado.")
+                    recargar_app()
+        else:
+            st.warning("No hay variedades registradas.")
+
+    with tab2:
+        colA, colB = st.columns(2)
+        with colA:
+            with st.form("nueva_variedad"):
+                st.subheader("➕ Agregar Variedad")
+                nuevo_cod = st.text_input("Código (Ej: P003)")
+                nueva_var = st.text_input("Nombre de la Variedad")
+                nueva_fam = st.selectbox("Familia", ["Flores", "Extractos", "Comestibles", "Otros"])
+                btn_crear = st.form_submit_button("Agregar")
+                if btn_crear and nueva_var:
+                    nueva_fila = {"Código": nuevo_cod, "Variedad": nueva_var, "Familia": nueva_fam, "Stock": 0}
+                    st.session_state.productos = pd.concat([st.session_state.productos, pd.DataFrame([nueva_fila])], ignore_index=True)
+                    st.success("Variedad agregada.")
+                    recargar_app()
+        with colB:
+            with st.form("eliminar_variedad"):
+                st.subheader("🗑️ Eliminar Variedad")
+                if not st.session_state.productos.empty:
+                    var_a_borrar = st.selectbox("Seleccionar para eliminar", st.session_state.productos["Variedad"].tolist())
+                    btn_borrar = st.form_submit_button("Eliminar Permanentemente")
+                    if btn_borrar:
+                        st.session_state.productos = st.session_state.productos[st.session_state.productos["Variedad"] != var_a_borrar].reset_index(drop=True)
+                        st.success("Variedad eliminada.")
+                        recargar_app()
+
+# ==========================================
+# --- MODULO 4: REGISTRAR VENTA ---
+# ==========================================
+elif menu == "🛍️ Registrar Venta":
+    st.title("🛍️ Nueva Transacción")
+    
+    if st.session_state.productos.empty or st.session_state.clientes.empty:
+        st.warning("Debes registrar al menos un cliente y una variedad antes de vender.")
+    else:
+        def format_cliente_venta(nombre):
+            estado = st.session_state.clientes.loc[st.session_state.clientes["Nombre"] == nombre, "Estado"].values[0]
+            return f"{nombre} (Inactivo)" if estado == "Inactivo" else nombre
+
+        with st.form("formulario_venta"):
+            cliente_sel = st.selectbox("Seleccionar Socio", st.session_state.clientes["Nombre"].tolist(), format_func=format_cliente_venta)
+            producto_sel = st.selectbox("Seleccionar Variedad", st.session_state.productos["Variedad"].tolist())
+            gramos = st.number_input("Cantidad (Gramos)", min_value=1, step=1)
+            precio = st.number_input("Precio por Gramo ($)", min_value=1, step=10)
+            condicion = st.radio("Condición de Pago", ["Paga en el momento", "Debe"])
+            
+            procesar = st.form_submit_button("Procesar Venta 🚀")
+            
+            if procesar:
+                total = gramos * precio
+                nro_recibo = f"V-{len(st.session_state.ventas) + 1:03d}"
+                nueva_venta = {"Fecha": str(datetime.date.today()), "Recibo": nro_recibo, "Cliente": cliente_sel, "Variedad": producto_sel, "Gramos": gramos, "Precio/g": precio, "Total": total, "Condición": condicion}
+                
+                st.session_state.ventas = pd.concat([st.session_state.ventas, pd.DataFrame([nueva_venta])], ignore_index=True)
+                
+                idx_prod = st.session_state.productos.index[st.session_state.productos["Variedad"] == producto_sel].tolist()[0]
+                st.session_state.productos.at[idx_prod, "Stock"] -= gramos
+                
+                if condicion == "Debe":
+                    idx_cli = st.session_state.clientes.index[st.session_state.clientes["Nombre"] == cliente_sel].tolist()[0]
+                    st.session_state.clientes.at[idx_cli, "Saldo"] += total
+                    
+                st.success(f"Venta procesada. Total: ${total:,.2f}")
+
+# ==========================================
+# --- MODULO 5: COMPRAS Y RETIROS ---
+# ==========================================
+elif menu == "💸 Compras y Retiros":
+    st.title("💸 Registro de Salidas de Dinero")
+    tab1, tab2 = st.tabs(["🛒 Compras y Gastos", "🏧 Retiros de Dinero"])
+    
+    with tab1:
+        with st.form("registro_compra"):
+            st.subheader("Registrar Compra/Gasto Operativo")
+            concepto = st.text_input("Concepto (Ej: Insumos, Alquiler, Luz)")
+            proveedor = st.text_input("Proveedor / Empresa")
+            monto_compra = st.number_input("Monto del Gasto ($)", min_value=1, step=100)
+            btn_compra = st.form_submit_button("Registrar Gasto")
+            if btn_compra and concepto:
+                nueva_compra = {"Fecha": str(datetime.date.today()), "Concepto": concepto, "Proveedor": proveedor, "Monto": monto_compra}
+                st.session_state.compras = pd.concat([st.session_state.compras, pd.DataFrame([nueva_compra])], ignore_index=True)
+                st.success("Gasto registrado en el flujo.")
+                recargar_app()
+        st.write("Historial de Compras:")
+        st.dataframe(st.session_state.compras, use_container_width=True)
+        
+    with tab2:
+        st.subheader("📊 Resumen de Retiros por Usuario")
+        if not st.session_state.retiros.empty:
+            resumen_usuarios = st.session_state.retiros.groupby("Usuario")["Monto"].sum().reset_index()
+            cols_resumen = st.columns(len(resumen_usuarios) if len(resumen_usuarios) > 0 else 1)
+            for i, row in resumen_usuarios.iterrows():
+                with cols_resumen[i]:
+                    st.metric(f"Total {row['Usuario']}", f"${row['Monto']:,.2f}")
+        else:
+            st.info("Aún no se han registrado retiros.")
+
+        st.markdown("---")
+        
+        with st.form("registro_retiro"):
+            st.subheader("Registrar Nuevo Retiro")
+            usuario = st.selectbox("Usuario que realiza el retiro", ["Usuario 1", "Usuario 2"])
+            monto_retiro = st.number_input("Monto a retirar ($)", min_value=1, step=100)
+            btn_retiro = st.form_submit_button("Registrar Retiro")
+            if btn_retiro:
+                nuevo_retiro = {"Fecha": str(datetime.date.today()), "Usuario": usuario, "Monto": monto_retiro}
+                st.session_state.retiros = pd.concat([st.session_state.retiros, pd.DataFrame([nuevo_retiro])], ignore_index=True)
+                st.success("Retiro registrado.")
+                recargar_app()
+                
+        st.subheader("📋 Historial Detallado")
+        filtro_usr = st.selectbox("Filtrar historial por:", ["Todos", "Usuario 1", "Usuario 2"])
+        
+        df_mostrar = st.session_state.retiros
+        if filtro_usr != "Todos":
+            df_mostrar = df_mostrar[df_mostrar["Usuario"] == filtro_usr]
+            
+        st.dataframe(df_mostrar, use_container_width=True)
+
+# ==========================================
+# --- MODULO 6: CAJA Y FINANZAS ---
+# ==========================================
+elif menu == "💰 Caja y Finanzas":
+    st.title("💰 Flujo de Fondos y Resultados")
+    
+    ventas_efectivo = st.session_state.ventas[st.session_state.ventas["Condición"] == "Paga en el momento"]["Total"].sum() if not st.session_state.ventas.empty else 0
+    cobranzas = st.session_state.cobranzas["Monto Abonado"].sum() if not st.session_state.cobranzas.empty else 0
+    total_ingresos = ventas_efectivo + cobranzas
+    
+    compras = st.session_state.compras["Monto"].sum() if not st.session_state.compras.empty else 0
+    retiros = st.session_state.retiros["Monto"].sum() if not st.session_state.retiros.empty else 0
+    total_egresos = compras + retiros
+    
+    caja_neta = total_ingresos - total_egresos
+    
+    st.markdown("### Estado de Flujo de Caja")
+    st.markdown("""
+    | Concepto | Monto |
+    | :--- | :--- |
+    | **(+) Ventas al Contado** |  ${:,.2f} |
+    | **(+) Cobro de Deudas (Atrasadas)** |  ${:,.2f} |
+    | --- | --- |
+    | **TOTAL INGRESOS CAJA** | **${:,.2f}** |
+    | | |
+    | **(-) Compras y Gastos Operativos** | -${:,.2f} |
+    | **(-) Retiros de Socios** | -${:,.2f} |
+    | --- | --- |
+    | **TOTAL EGRESOS CAJA** | **-${:,.2f}** |
+    | | |
+    | **(=) SALDO NETO EN CAJA HOY** | **${:,.2f}** |
+    """.format(ventas_efectivo, cobranzas, total_ingresos, compras, retiros, total_egresos, caja_neta))
+    
+    if caja_neta < 0:
+        st.error("⚠️ Atención: La caja está en negativo. Hay más salidas registradas que ingresos de efectivo.")
